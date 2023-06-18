@@ -1,7 +1,0 @@
-#! /bin/sh
-
-g++ -Wall -Wextra -Werror -o testing ArrayList.o testing.cpp
-
-./testing tree_test.jpg
-
-# g++ -Wall -Wextra -Werror -o decode ArrayList.o decode.cpp
