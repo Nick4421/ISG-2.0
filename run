@@ -1,0 +1,280 @@
+#! /bin/sh
+# Driver file for encoding and decoding
+
+
+# encode
+# Runs the commands associated with encoding a file
+# Programs used:
+#       - encode
+#       - pamenlarge
+#       - ffmpeg
+function encode {
+    # File path input loop
+    while true; do
+        read -p "Enter file path to file for encoding: " filepath
+
+        if [[ -f "$filepath" ]]; then
+            break  # Valid file path, break out of the loop
+        else
+            echo "Invalid file path or the file does not exist."
+            read -p "Enter another file path? (y/n): " choice
+            if [[ "$choice" == "n" ]]; then
+                return  # Exit the function if the user chooses not to re-enter the file path
+            fi
+        fi
+    done
+
+
+    # Get filename for encoding
+    while true; do
+        read -p "Enter name for encoded file (must end in .mp4): " final_filename
+
+        # Check if the filename is empty
+        if [ -z "$final_filename" ]; then
+            final_filename="output.mp4"
+            break
+        fi
+
+        # Check if the filename ends with ".mp4"
+        if [[ "$final_filename" == *.mp4 ]]; then
+            break
+        else
+            echo "Invalid filename. Filename must end in .mp4."
+        fi
+    done
+
+
+    while true; do
+        read -p "Enter location to store encoded video (or leave blank to place in current directory): " directory_path
+
+        # If the input has been left blank
+        if [[ -z "$directory_path" ]]; then
+            break
+        fi
+
+        if [[ ! -d "$directory_path" ]]; then
+            echo "Invalid directory path or the directory does not exist."
+        else
+            break
+        fi
+    done
+
+
+    # Make a copy of the desired file to encode
+    cp "$filepath" src/executables/copy
+
+
+    # Change into right directory
+    cd src/executables
+    # Create frames
+    echo "Generating frames..."
+    ./encode copy
+    rm copy
+
+
+    # Get the number of frames
+    prefix="image-"
+    num_images=$(find . -maxdepth 1 -type f -name "${prefix}*" | wc -l)
+    # Scale the pbm image files by a factor of 2
+    for ((i = 0; i < num_images; i++))
+    do
+        input_file="image-${i}.pbm"
+        output_file="scaled-up-${i}.pbm"
+        ./pamenlarge -scale=2 "$input_file" > "$output_file"
+    done
+
+    rm image-*
+
+    # Pack the frames into a video
+    echo "Generating video..."
+    ./ffmpeg -i scaled-up-%d.pbm "$final_filename" > /dev/null 2>&1
+
+
+    # Cleanup
+    rm *.pbm
+    mv "$final_filename" ../../
+
+
+    # Return to starting directory
+    cd ../../
+
+
+    if [[ -z "$directory_path" ]]; then
+    # Print done in bold green
+        echo "\033[1;32mDone\033[0m"        
+        # Delay before printing next command prompt
+        sleep 0.5s
+        echo "\n"
+        return
+    fi
+
+
+    # Move video into desired location
+    mv "$final_filename" "$directory_path"
+    
+
+    # Print done in bold green
+    echo "\033[1;32mDone\033[0m"       
+    # Delay before printing next command prompt
+    sleep 0.5s
+    echo "\n"
+}
+
+
+# decode
+# Runs the commands associated with decoding a video
+# Programs used:
+#       - ffmpeg
+#       - pamscale
+#       - decode
+function decode {
+    # File path input loop
+    while true; do
+        read -p "Enter file path to video for decoding: " filepath
+
+        if [[ -f "$filepath" && "$filepath" == *.mp4 ]]; then
+            break  # Valid file path, break out of the loop
+        else
+            echo "Invalid file path or the file is not a .mp4 file."
+            read -p "Enter another file path? (y/n): " choice
+            if [[ "$choice" == "n" ]]; then
+                return  # Exit the function if the user chooses not to re-enter the file path
+            fi
+        fi
+    done
+
+
+    read -p "Enter name for decoded file: " final_filename
+    # Check if the filename is empty
+    if [ -z "$final_filename" ]; then
+        final_filename="output"
+    fi
+
+
+    while true; do
+        read -p "Enter location to store final file (or leave blank to place in current directory): " directory_path
+
+        # If the input has been left blank
+        if [[ -z "$directory_path" ]]; then
+            break
+        fi
+
+        if [[ ! -d "$directory_path" ]]; then
+            echo "Invalid directory path or the directory does not exist."
+        else
+            break
+        fi
+    done
+
+
+    # Make a copy of the desired file to encode
+    cp "$filepath" src/executables/copy.mp4
+    
+
+    # Change into right directory
+    cd src/executables
+    # Gets frames from video
+    echo "Getting frames from video..."
+    ./ffmpeg -i copy.mp4 %05d.pbm > /dev/null 2>&1
+    rm copy.mp4
+
+
+    # Temporary directory to hold frames
+    mkdir temp_frames
+    mv *.pbm temp_frames
+    cd temp_frames
+
+
+    # Remove leading zeros from filenames
+    for FILENAME in *
+    do
+        # Check if the current item is a file
+        if [[ -f "$FILENAME" ]]; then
+            # Remove leading zeros from the filename
+            NEW_FILENAME=$(echo "$FILENAME" | sed 's/^0*//')
+            
+            # Rename the file
+            mv "$FILENAME" "$NEW_FILENAME"
+        fi
+    done
+
+
+    # Get the number of frames
+    num_files=$(find . -maxdepth 1 -type f | wc -l)
+
+
+    # Move frames back into executables directory
+    mv *.pbm ../
+    cd ../
+    rmdir temp_frames
+
+
+    # Resize the frames back to their original size
+    for ((i = 1; i <= num_files; i++))
+    do
+        input_file="${i}.pbm"
+        output_file="new-${i}.pbm"
+        
+        ./pamscale 0.5 "$input_file" -nomix > "$output_file"
+    done
+
+
+
+    # Assemble the final file
+    echo "Assembling final file..."
+    ./decode "$final_filename"
+
+
+    # Cleanup
+    rm new-*
+    rm *.pbm
+
+    # Move final file into starting directory
+    mv "$final_filename" ../../
+
+    # Move final file back to starting directory
+    cd ../../
+
+    # If no directory path was specified, leave in current directory
+    if [[ -z "$directory_path" ]]; then
+        # Print done in bold green
+        echo "\033[1;32mDone\033[0m"
+            
+        # Delay before printing next command prompt
+        sleep 0.5s
+        echo "\n"
+        return
+    fi
+
+    # Place file in desired directory
+    mv "$final_filename" "$directory_path"
+
+    # Print done in bold green
+    echo "\033[1;32mDone\033[0m"
+            
+    # Delay before printing next command prompt
+    sleep 0.5s
+    echo "\n"
+
+}
+
+
+# Command loop
+while true; do
+    # Display menu
+    echo "(e)ncode"
+    echo "(d)ecode"
+    echo "(q)uit"
+
+    read choice
+
+    if [[ $choice == "e" ]] || [[ $choice == "encode" ]]; then
+        encode
+    elif [[ $choice == "d" ]] || [[ $choice == "decode" ]]; then
+        decode
+    elif [[ $choice == "q" ]] || [[ $choice == "quit" ]]; then
+        break # Exit the loop if option Q is chosen
+    else
+        echo "Invalid input. Try again."
+    fi
+done

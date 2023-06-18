@@ -1,0 +1,14 @@
+#! /bin/sh
+
+# Replaces the encode and decode executables from the src_code file
+
+cd src/src_code
+make
+
+rm ../executables/encode
+rm ../executables/decode
+
+mv encode ../executables
+mv decode ../executables
+
+make clean

@@ -1,0 +1,82 @@
+#! /bin/sh
+
+make > /dev/null
+
+# clean up testing folders
+cd decoded_images
+rm *.pbm
+cd ../encoded_images
+rm *.pbm
+cd ../final_images
+rm *.pbm
+cd ..
+
+# ./encode Tests/test_input.txt
+./encode ffmpeg
+# ./encode Tests/large_test.jpg
+
+# Removes output.mp4 if it exists
+if [[ -f output.mp4 ]]; then
+    rm output.mp4
+fi
+
+# Get the number of image files created
+prefix="image-"
+num_images=$(find . -maxdepth 1 -type f -name "${prefix}*" | wc -l)
+
+# Scale the pbm image files by a factor of 2
+for ((i = 0; i < num_images; i++))
+do
+    input_file="image-${i}.pbm"
+    output_file="scaled-up-${i}.pbm"
+    ./pamenlarge -scale=2 "$input_file" > "$output_file"
+done
+mv image-* encoded_images
+# rm image-*
+
+# Creates video for uploading
+./ffmpeg -i scaled-up-%d.pbm output.mp4 > /dev/null 2>&1
+rm *.pbm
+
+
+
+
+
+
+# Gets frames from video
+./ffmpeg -i output.mp4 %05d.pbm > /dev/null 2>&1
+
+mv *.pbm decoded_images
+cd decoded_images
+
+# Remove leading zeros from filenames
+for FILENAME in *
+do
+    # Check if the current item is a file
+    if [[ -f "$FILENAME" ]]; then
+        # Remove leading zeros from the filename
+        NEW_FILENAME=$(echo "$FILENAME" | sed 's/^0*//')
+        
+        # Rename the file
+        mv "$FILENAME" "$NEW_FILENAME"
+    fi
+done
+cd ..
+
+# resize the images back to original size
+for ((i = 1; i <= num_images; i++))
+do
+    input_file="${i}.pbm"
+    output_file="new-original-${i}.pbm"
+    
+    ./pamscale 0.5 decoded_images/"$input_file" -nomix > "$output_file"
+done
+
+mv new-original-* final_images
+
+
+# Decoding
+./decode
+
+
+# echo "\033[1;32mDone\033[0m"
